@@ -4,9 +4,10 @@
 //  mágicos" en el resto del código.
 // =====================================================================
 #pragma once
+#include <stddef.h>
 #include <stdint.h>
 
-#define FW_VERSION "0.2.0"
+#define FW_VERSION "0.3.0"
 
 // ---------------------------------------------------------------------
 //  Muestreo
@@ -27,6 +28,50 @@ constexpr uint32_t SAMPLE_PERIOD_US = 1000000UL / SAMPLE_RATE_HZ;
 // NO caben en 115200 baudios (~11,5 kB/s). Con 921600 hay margen de 4x.
 constexpr uint32_t SERIAL_BAUD = 921600;
 constexpr uint32_t SERIAL_TX_BUFFER = 8192;
+
+// ---------------------------------------------------------------------
+//  WiFi (servidor TCP con el mismo CSV y los mismos comandos que el USB)
+// ---------------------------------------------------------------------
+// Sirve para usar el equipo alimentado por corriente (cargador) sin cable de
+// datos. La red se define en wifi_secrets.h (ver wifi_secrets.example.h); si no
+// existe o no conecta a tiempo, el ESP32 crea su propio punto de acceso.
+// (CFG_WIFI_ENABLED=0 lo desactiva en la compilación, p. ej. en Wokwi)
+#ifndef CFG_WIFI_ENABLED
+#define CFG_WIFI_ENABLED 1
+#endif
+// Valores iniciales opcionales, SOLO en wifi_secrets.h (local, fuera del repositorio):
+// WIFI_STA_SSID / WIFI_STA_PASS (red), WIFI_AP_PASS_SET (clave del punto de acceso),
+// WEB_USER / WEB_PASS (acceso web). Lo normal es configurarlos desde /setup, sin recompilar.
+#if __has_include("wifi_secrets.h")
+#include "wifi_secrets.h"
+#endif
+#ifndef WIFI_STA_SSID
+#define WIFI_STA_SSID ""
+#endif
+#ifndef WIFI_STA_PASS
+#define WIFI_STA_PASS ""
+#endif
+#ifndef WIFI_AP_PASS_SET
+#define WIFI_AP_PASS_SET "aterriza2026"   // valor público por defecto: cámbialo en wifi_secrets.h
+#endif
+#ifndef WEB_USER
+#define WEB_USER ""
+#endif
+#ifndef WEB_PASS
+#define WEB_PASS ""
+#endif
+constexpr uint16_t WIFI_TCP_PORT = 3333;                   // flujo CSV (lo usa la plataforma)
+constexpr const char* WIFI_HOSTNAME = "aterriza";          // mDNS: aterriza.local
+constexpr const char* WIFI_AP_SSID = "Aterriza-ESP32";     // punto de acceso propio (respaldo)
+constexpr const char* WIFI_AP_PASS = WIFI_AP_PASS_SET;     // mínimo 8 caracteres
+constexpr uint32_t WIFI_STA_TIMEOUT_MS = 12000;
+constexpr uint32_t WIFI_RETRY_MS = 15000;                  // reintento de unión a la red
+
+// Nodo web (panel de lecturas y /api/status, con usuario y contraseña)
+constexpr uint16_t WEB_PORT = 80;
+constexpr size_t WEB_MIN_PASS_LEN = 8;
+constexpr uint8_t WEB_MAX_FAILS = 5;                       // intentos fallidos seguidos
+constexpr uint32_t WEB_LOCK_MS = 30000;                    // bloqueo tras exceder los intentos
 
 // ---------------------------------------------------------------------
 //  Sensores de carga FSR 402 (entradas ADC1, compatibles con WiFi/BLE)

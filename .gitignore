@@ -19,6 +19,9 @@ plataforma/frontend/playwright-report/
 *.tsbuildinfo
 *.log
 
+# Credenciales WiFi del firmware (ver wifi_secrets.example.h)
+firmware/BiomecanicaESP32/wifi_secrets.h
+
 # Firmware compilado para Wokwi (se regenera con simulacion/build_firmware.sh)
 simulacion/build/
 # Gemelo digital compilado (se regenera solo con simulacion/gemelo/build.sh)

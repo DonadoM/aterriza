@@ -92,6 +92,70 @@ Si aparece "Failed to connect", mantén presionado el botón **BOOT** de la plac
 Al encender, los primeros caracteres salen ilegibles: es el bootloader del ESP32, que
 transmite a 115200 baudios. Es normal.
 
+### WiFi y panel web (v0.3.0)
+
+Con WiFi el equipo ofrece **dos servicios** sobre la misma conexión (el USB sigue
+funcionando a la vez):
+
+| Servicio | Puerto | Para qué | Acceso |
+|---|---|---|---|
+| Flujo TCP | 3333 | Mismo CSV y mismos comandos que el USB (lo usa la plataforma). Un cliente; el más reciente reemplaza al anterior | **Sin autenticación** |
+| Panel web | 80 | Tres indicadores de IMU (muslo, pierna, lumbar) + indicador de WiFi; `/api/status` en JSON | **Usuario y contraseña** (HTTP Basic) |
+
+**Primer uso (configurar acceso y red, sin recompilar)**
+
+1. Sube el firmware por USB (sección 2). Al no haber red configurada, el ESP32 crea su punto de
+   acceso **`Aterriza-ESP32`** (clave por defecto en `config.h`, `WIFI_AP_PASS_SET`; es pública:
+   cámbiala en `wifi_secrets.h` si el equipo sale del laboratorio).
+2. Conecta el computador o el móvil a esa red y abre **http://192.168.4.1/**. Mientras no exista
+   usuario y contraseña, te lleva a `/setup`.
+3. Define **usuario y contraseña de acceso** (distintos de los del WiFi; mínimo 8 caracteres) y,
+   si quieres, la **red WiFi** del laboratorio (solo 2,4 GHz). Si cambias la red, el equipo se
+   reinicia y se une a ella (`aterriza.local` o la IP que anuncia por USB con `i`).
+4. Desde ese momento todo el panel y `/api/status` piden usuario y contraseña. Tras 5 intentos
+   fallidos seguidos bloquea los accesos 30 s (HTTP 429).
+
+**Cómo se guardan las credenciales.** La red WiFi y el usuario web van en la NVS, en un espacio
+propio (`aterriza_net`), separado del de calibración. De la contraseña web solo se guarda un
+hash SHA-256 con sal e iteraciones; no se imprime en el puerto serie ni se devuelve por HTTP.
+La clave del WiFi sí se guarda en claro (el ESP32 la necesita para unirse). Nada de esto va en el
+código: `wifi_secrets.h` es opcional, está en `.gitignore` y solo siembra valores si la NVS está
+vacía. El comando serie `k` olvida red y credenciales web (no toca la calibración).
+
+**Ver las lecturas**
+
+- Panel: `http://<IP>/` — por cada IMU: estado (OK / Sin respuesta / No conectada), modelo y
+  dirección I2C, acelerómetro (g), giroscopio (°/s), magnetómetro (µT), inclinación (°) y errores
+  I2C; arriba, el estado del WiFi (SSID, IP, RSSI en dBm). Se actualiza cada 0,5 s.
+- JSON: `curl -u usuario http://<IP>/api/status`.
+- Plataforma: *Preparación → ESP32 por WiFi* (flujo TCP). Desde terminal:
+  `python tools/logger.py --port socket://aterriza.local:3333`.
+
+**Dependencias.** Solo el core `esp32:esp32` (probado con 4.0.0): `WiFi`, `WebServer`, `ESPmDNS`,
+`Preferences`. No hay librerías externas; el SHA-256 es propio (`Sha256.h`) para no depender de la
+API de mbedtls, que cambia entre versiones del core.
+
+**Límites conocidos.** HTTP sin cifrar: usa el punto de acceso propio o una red de confianza. El
+puerto 3333 acepta comandos (`r` borra calibraciones) sin autenticar. `CFG_WIFI_ENABLED=0` quita
+todo el WiFi en la compilación (Wokwi lo usa así). Con WiFi el programa ocupa ~84 % de la flash.
+
+**Archivos nuevos o modificados:** `config.h` (constantes), `WifiLink.*` (conexión, reconexión,
+respaldo AP, TCP, estado), `NetConfig.*` (NVS y hash), `WebNode.*` (servidor y autenticación),
+`Dashboard.h` (páginas), `StatusJson.*` y `Snapshot.h` (JSON de lecturas), `AuthUtil.h`, `Sha256.h`,
+`App.*` (instantánea de lecturas y comando `k`), `wifi_secrets.example.h`.
+
+**Qué está verificado y qué no**
+
+- Compilación: el sketch compila con y sin `CFG_WIFI_ENABLED`.
+- En el PC (`tests/host_test.cpp`, vía `pytest`): SHA-256 con vectores oficiales, decodificación
+  de `Authorization: Basic`, comparación en tiempo constante y JSON de estado válido (NaN, SSID
+  con comillas, IMU ausente, sin red).
+- **Requiere prueba física** (no verificado): unión a la red y reconexión real, punto de acceso,
+  bloqueo tras intentos fallidos con un navegador, reinicio tras `/setup`, mDNS, aspecto del panel
+  en el móvil, y que las lecturas del panel coincidan con las del CSV en la placa. El panel no
+  se ha abierto aún contra un ESP32 real.
+
+
 ## 3. Cableado
 
 | Señal | Pin ESP32 | Conexión |
@@ -155,6 +219,7 @@ en SDA y SCL.
 | `a` | offset del acelerómetro (IMU planas, Z arriba) |
 | `m` | magnetómetro (20 s en "8") |
 | `r` | borrar calibraciones de IMU |
+| `k` | olvidar red WiFi y usuario/contraseña web (reinicia; no toca la calibración) |
 
 ## 6. Formato de datos
 
@@ -227,7 +292,7 @@ Su resultado clave: con 10 kΩ el FSR se satura; **1 kΩ a 200 Hz sin promedio**
 - Sensor de carga definitivo y su circuito.
 - Frecuencia final.
 - Filtros y umbrales.
-- Interfaz definitiva (USB, BLE o WiFi).
+- Interfaz definitiva (USB y WiFi ya funcionan; BLE no está implementado).
 - Software del PC (calibración, eventos, variables).
 
 El firmware está preparado para cambiar estos puntos editando solo `config.h`.

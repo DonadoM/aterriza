@@ -11,6 +11,9 @@
 #include "FsrArray.h"
 #include "Orientation.h"
 #include "Calibration.h"
+#include "WifiLink.h"
+#include "NetConfig.h"
+#include "WebNode.h"
 #include "App.h"
 
 // ------------------------------- Hardware ----------------------------
@@ -63,6 +66,12 @@ static volatile bool gStreaming = STREAM_AT_BOOT;
 static volatile bool gPlotMode = false;
 static volatile bool gTared = false;
 static float gTareAngle[NUM_IMU] = {0, 0, 0};
+
+// Última muestra para el nodo web: la escribe solo la tarea de muestreo y se
+// copia entera bajo un spinlock (nunca se lee a medias).
+static Snapshot gSnap;
+static portMUX_TYPE gSnapMux = portMUX_INITIALIZER_UNLOCKED;
+static volatile bool gRestartPending = false;
 
 // Cada contador tiene un solo escritor y las escrituras de 32 bits son
 // atómicas en el ESP32; los lectores (comando 'i') solo informan.
@@ -412,6 +421,29 @@ static void samplerTask(void*) {
     char cmd;
     while (xQueueReceive(gCmdQ, &cmd, 0) == pdTRUE) handleSamplerCommand(cmd);
 
+    // ---- Publicación para el nodo web
+    {
+      Snapshot n;
+      memset(&n, 0, sizeof(n));
+      n.valid = true;
+      n.seq = s.seq;
+      n.flags = s.flags;
+      n.tared = gTared;
+      n.knee = s.knee;
+      n.trunk = s.trunk;
+      for (uint8_t k = 0; k < NUM_FSR; k++) n.fsr[k] = s.fsr[k];
+      for (uint8_t k = 0; k < NUM_IMU; k++) {
+        n.imu[k].readError = (s.flags >> (4 + k)) & 1;
+        n.imu[k].angle = segAngle[k];
+        n.imu[k].acc[0] = s.acc[k].x; n.imu[k].acc[1] = s.acc[k].y; n.imu[k].acc[2] = s.acc[k].z;
+        n.imu[k].gyr[0] = s.gyr[k].x; n.imu[k].gyr[1] = s.gyr[k].y; n.imu[k].gyr[2] = s.gyr[k].z;
+        n.imu[k].magf[0] = s.mag[k].x; n.imu[k].magf[1] = s.mag[k].y; n.imu[k].magf[2] = s.mag[k].z;
+      }
+      portENTER_CRITICAL(&gSnapMux);
+      gSnap = n;
+      portEXIT_CRITICAL(&gSnapMux);
+    }
+
     // ---- Envío
     gStats.samples++;
     if (gStreaming && xQueueSend(gDataQ, &s, 0) != pdTRUE) gStats.queueDrops++;
@@ -421,6 +453,28 @@ static void samplerTask(void*) {
     gStats.lastSampleUs = dur;
     if (dur > gStats.maxSampleUs) gStats.maxSampleUs = dur;
   }
+}
+
+bool appSnapshot(Snapshot& out) {
+  portENTER_CRITICAL(&gSnapMux);
+  out = gSnap;
+  portEXIT_CRITICAL(&gSnapMux);
+  out.uptimeS = millis() / 1000;
+  out.overruns = gStats.overruns;
+  out.rateHz = out.uptimeS > 0 ? gStats.samples / (float)out.uptimeS : 0.0f;
+  out.tared = gTared;
+  for (uint8_t i = 0; i < NUM_IMU; i++) {
+    const ImuSensor& imu = imus[i];
+    ImuSnapshot& m = out.imu[i];
+    m.present = imu.ok();
+    m.i2cErrors = imu.errorCount();
+    m.addr = imu.address();
+    if (m.present) {
+      strlcpy(m.model, imu.modelName(), sizeof(m.model));
+      strlcpy(m.mag, imu.magName(), sizeof(m.mag));
+    }
+  }
+  return out.valid;
 }
 
 // ======================= Tarea de transmisión serial ==================
@@ -441,18 +495,24 @@ static int formatSample(const Sample& s, char* buf, size_t size) {
   return n;
 }
 
+// Todo lo que sale del equipo va igual por USB y por WiFi (si hay un cliente).
+static void emit(const uint8_t* data, size_t n) {
+  Serial.write(data, n);
+  wifilink::write(data, n);
+}
+
 static void writerTask(void*) {
   static char line[512];
   Sample s;
   Msg m;
   for (;;) {
     while (xQueueReceive(gMsgQ, &m, 0) == pdTRUE) {
-      Serial.print(m.text);
-      Serial.print('\n');
+      const int n = snprintf(line, sizeof(line), "%s\n", m.text);
+      if (n > 0) emit((const uint8_t*)line, min((size_t)n, sizeof(line) - 1));
     }
     if (xQueueReceive(gDataQ, &s, pdMS_TO_TICKS(5)) == pdTRUE) {
       int n = formatSample(s, line, sizeof(line));
-      if (n > 0) Serial.write((const uint8_t*)line, min((size_t)n, sizeof(line) - 1));
+      if (n > 0) emit((const uint8_t*)line, min((size_t)n, sizeof(line) - 1));
     }
   }
 }
@@ -462,6 +522,7 @@ static void printHelp() {
   postMsg("#HELP h ayuda | i estado | c calibraciones | s iniciar | x detener | p plotter");
   postMsg("#HELP t tara (1 s erguido) | g giroscopio (2 s quieto) | a acelerometro (plano Z arriba)");
   postMsg("#HELP m magnetometro (20 s en 8) | r borrar calibraciones IMU");
+  postMsg("#HELP k olvidar la red WiFi y el usuario/contrasena web (reinicia)");
 }
 
 static void printTiming() {
@@ -497,6 +558,9 @@ static void printInfo() {
   printTiming();
   postMsg("#INFO tara:%s transmision:%s modo:%s", gTared ? "SI" : "NO", gStreaming ? "ON" : "OFF",
           gPlotMode ? "plotter" : "csv");
+  char w[200];
+  wifilink::describe(w, sizeof(w));
+  postMsg("#INFO %s", w);
 }
 
 static void printCalibration() {
@@ -527,6 +591,11 @@ static void handleCommand(char c) {
       postMsg("#OK modo %s", gPlotMode ? "Serial Plotter" : "CSV");
       if (!gPlotMode) postHeader();
       break;
+    case 'k':
+      netconfig::clear();
+      postMsg("#OK red WiFi y acceso web olvidados (la calibracion IMU se conserva). Reiniciando...");
+      gRestartPending = true;
+      break;
     case 'g': case 'a': case 't': case 'm': case 'r':
       if (xQueueSend(gCmdQ, &c, 0) != pdTRUE) postMsg("#ERROR cola de comandos llena");
       break;
@@ -545,6 +614,8 @@ void appSetup() {
   gCmdQ = xQueueCreate(8, sizeof(char));
 
   xTaskCreatePinnedToCore(writerTask, "tx", 4096, nullptr, 3, nullptr, 0);
+  netconfig::begin();
+  wifilink::begin([](const char* text) { postMsg("%s", text); });
 
   postMsg("#BOOT Sistema de evaluacion biomecanica del aterrizaje - firmware %s", FW_VERSION);
   if (calstore::load(gCal)) postMsg("#BOOT calibraciones IMU cargadas desde NVS");
@@ -579,6 +650,13 @@ void appSetup() {
 
 void appLoop() {
   while (Serial.available()) handleCommand((char)Serial.read());
+  wifilink::poll();
+  webnode::handle();
+  if (gRestartPending) {
+    vTaskDelay(pdMS_TO_TICKS(400));   // deja salir el mensaje por serie/TCP
+    ESP.restart();
+  }
+  for (int c; (c = wifilink::read()) >= 0;) handleCommand((char)c);
 
   if (gCalDirty) {
     CalibrationData copy;
