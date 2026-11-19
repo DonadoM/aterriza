@@ -55,9 +55,11 @@ class AtletaIn(BaseModel):
 
 
 class ConectarIn(BaseModel):
-    fuente: str = "demo"          # demo | usb | wokwi
+    fuente: str = "demo"          # demo | usb | wifi | wokwi
     puerto: str | None = None
     url: str | None = None
+    host: str | None = None       # wifi: IP o nombre ("aterriza.local", "192.168.4.1" o "ip:puerto")
+    wifi_port: int | None = None
     escenario: int = 0
     imu: dict[str, bool] | None = None    # banco virtual: qué IMU simular conectadas
 
@@ -213,6 +215,10 @@ async def conectar(body: ConectarIn):
         kw["port"] = body.puerto
     if body.url:
         kw["url"] = body.url
+    if body.host:
+        kw["host"] = body.host
+    if body.wifi_port:
+        kw["wifi_port"] = body.wifi_port
     ok = await asyncio.to_thread(HUB.connect, body.fuente, **kw)
     if body.fuente == "demo":
         HUB.demo_escenario = body.escenario

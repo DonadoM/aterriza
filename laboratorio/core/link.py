@@ -3,6 +3,7 @@ Enlace con el ESP32: lee el CSV del firmware desde
   - el simulador integrado (gemelo digital con el código real del firmware),
   - la simulación de Wokwi (rfc2217://localhost:4000),
   - la placa real por USB,
+  - la placa real por WiFi (servidor TCP del firmware, socket://host:3333),
 lo guarda en un búfer para las gráficas en vivo, envía comandos y graba ensayos
 en el mismo formato que logger.py (CSV crudo + JSON de metadatos).
 """
@@ -10,6 +11,7 @@ from __future__ import annotations
 
 import glob
 import json
+import re
 import subprocess
 import threading
 import time
@@ -58,6 +60,29 @@ def list_usb_ports() -> list[str]:
 def find_usb_port() -> str | None:
     ports = list_usb_ports()
     return ports[0] if ports else None
+
+
+# WiFi: el firmware sirve el mismo CSV y acepta los mismos comandos por TCP (config.h).
+WIFI_HOST = "aterriza.local"       # mDNS del firmware; en su punto de acceso propio: 192.168.4.1
+WIFI_PORT = 3333
+_HOST_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
+
+
+def wifi_url(host: str | None = None, port: int | str | None = None) -> str:
+    """URL de pyserial para el ESP32 por WiFi. Acepta "host" o "host:puerto" en `host`."""
+    host = (host or WIFI_HOST).strip()
+    if ":" in host:
+        host, _, p = host.rpartition(":")
+        port = port or p
+    if not _HOST_RE.match(host):
+        raise ValueError(f"Dirección WiFi no válida: «{host}». Usa una IP (192.168.4.1) o un nombre (aterriza.local).")
+    try:
+        n = int(port or WIFI_PORT)
+    except ValueError:
+        raise ValueError(f"Puerto WiFi no válido: «{port}»") from None
+    if not 1 <= n <= 65535:
+        raise ValueError(f"Puerto WiFi fuera de rango: {n}")
+    return f"socket://{host}:{n}"
 
 
 # ----------------------------------------------------------------- fuentes
@@ -195,6 +220,13 @@ class Link:
                                    float(kw.get("transfer", 0.10)))
             elif kind == "wokwi":
                 src = SerialSource(kw.get("url") or "rfc2217://localhost:4000")
+            elif kind == "wifi":
+                url = wifi_url(kw.get("host"), kw.get("wifi_port"))
+                try:
+                    src = SerialSource(url)
+                except Exception as e:  # noqa: BLE001
+                    raise RuntimeError(f"No se pudo conectar a {url.removeprefix('socket://')} ({e}). "
+                                       "¿El equipo está encendido y en la misma red (o en su punto de acceso)?") from e
             else:
                 port = kw.get("port") or find_usb_port()
                 if not port:
@@ -262,7 +294,12 @@ class Link:
         if old:
             old.close()
         try:
-            url = (kw.get("url") or "rfc2217://localhost:4000") if kind == "wokwi" else (kw.get("port") or find_usb_port())
+            if kind == "wifi":
+                url = wifi_url(kw.get("host"), kw.get("wifi_port"))
+            elif kind == "wokwi":
+                url = kw.get("url") or "rfc2217://localhost:4000"
+            else:
+                url = kw.get("port") or find_usb_port()
             if not url:
                 raise RuntimeError("puerto no disponible")
             src = SerialSource(url)
@@ -298,7 +335,7 @@ class Link:
             try:
                 line = src.readline()
             except Exception as e:  # noqa: BLE001
-                if kind in ("wokwi", "usb"):
+                if kind in ("wokwi", "usb", "wifi"):
                     with self.lock:
                         self.messages.append(f"#LAB conexión perdida ({e}); reintentando…")
                     self._reopen()
@@ -311,7 +348,7 @@ class Link:
             if line:
                 last_data = time.monotonic()
                 self._handle(line)
-            elif kind in ("wokwi", "usb") and time.monotonic() - last_data > 4.0:
+            elif kind in ("wokwi", "usb", "wifi") and time.monotonic() - last_data > 4.0:
                 with self.lock:
                     self.messages.append("#LAB sin datos hace 4 s; reabriendo la conexión "
                                          "(¿simulación reiniciada o pestaña de Wokwi oculta?)")

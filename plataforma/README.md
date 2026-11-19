@@ -43,6 +43,10 @@ Todos compilan la interfaz si hace falta y abren <http://127.0.0.1:8000>.
   macOS, `/dev/ttyUSB0` en Linux, `COM3` en Windows), a 921 600 baudios. Drivers y permisos:
   [firmware/README.md](../firmware/README.md#1-qué-instalar). El firmware
   **no** se modifica: mismo CSV de 36 columnas y mismos comandos (`t i g a m s x`).
+- **ESP32 por WiFi:** *Preparación → ESP32 por WiFi*; escribe `aterriza.local` (red del
+  laboratorio) o `192.168.4.1` (red propia `Aterriza-ESP32` del equipo). Mismo CSV y comandos
+  por TCP `:3333`; se reconecta solo si se corta. Configuración del firmware:
+  [firmware/README.md](../firmware/README.md#wifi-equipo-alimentado-por-cargador-sin-cable-de-datos).
 - **Wokwi:** `rfc2217://localhost:4000` con la simulación corriendo en VS Code.
 
 - **Banco virtual:** un ESP32 simulado con el mismo CSV del firmware, cuyas plantillas e IMU
