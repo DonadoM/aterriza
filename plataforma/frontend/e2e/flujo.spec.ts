@@ -17,8 +17,8 @@ test('perfil → preparación → 3 saltos → resultado → progreso', async ({
 
   await page.getByTestId('fuente-demo').click()
   await page.getByTestId('conectar').click()
-  await expect(page.getByTestId('sensor')).toHaveCount(8, { timeout: 15_000 })
-  await page.getByTestId('tara').click()
+  // Sin paso de verificación de sensores: tras conectar va directo a la tara.
+  await page.getByTestId('tara').click({ timeout: 15_000 })
   await page.getByTestId('empezar').click({ timeout: 20_000 })
   await expect(page).toHaveURL(/evaluar/)
 
@@ -29,7 +29,9 @@ test('perfil → preparación → 3 saltos → resultado → progreso', async ({
     await expect(tarjeta).toBeVisible({ timeout: 20_000 })
     await expect(tarjeta).toContainText(esperados[i])
     if (esc === 1) await expect(tarjeta).toContainText(/Flexiona más las rodillas/)
-    if (esc === 2) await expect(page.getByTestId('aviso-asimetria')).toBeVisible()
+    // El aviso de asimetría es bilateral y se oculta mientras se mide con una plantilla.
+    if (esc === 2) await expect(page.getByTestId('aviso-asimetria')).toHaveCount(0)
+    await expect(tarjeta).toContainText(/Pie (izquierdo|derecho)/)
     await expect(page.getByTestId('contador')).toHaveText(String(i + 1))
     if (i < 2) {
       await page.getByTestId('siguiente').click()

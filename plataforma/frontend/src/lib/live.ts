@@ -3,7 +3,7 @@
  * en un objeto mutable que la escena 3D lee en cada fotograma. El estado y los
  * saltos sí van al store (cambian pocas veces por segundo).
  */
-import { useLive } from './store'
+import { registrarPieSalto, useApp, useLive } from './store'
 import type { LiveFrame, SaltoEvento, Status } from './types'
 
 export const frame: { current: LiveFrame | null; recibido: number } = { current: null, recibido: 0 }
@@ -46,6 +46,7 @@ function open() {
         contactListeners.forEach((f) => f(msg))
         break
       case 'salto':
+        registrarPieSalto(msg.salto?.id, useApp.getState().pie)
         useLive.getState().set({ ultimoSalto: msg.salto })
         jumpListeners.forEach((f) => f(msg.salto))
         break

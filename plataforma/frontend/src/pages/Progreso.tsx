@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { Button, CAT_ESTADO, Disclaimer, estadoVar, Sheet } from '../components/ui'
 import { api } from '../lib/api'
-import { useApp } from '../lib/store'
+import { pieDeSalto, useApp } from '../lib/store'
 import type { Atleta, Item } from '../lib/types'
 
 interface SesionP {
@@ -112,6 +112,7 @@ export default function Progreso() {
                 {ult.saltos_lista.map((j, i) => (
                   <Link key={j.id} to={`/salto/${j.id}`} className={clsx('rounded-full border px-3 py-1 font-mono text-sm transition hover:border-ink/40', j.confianza === 'baja' ? 'border-dashed border-line text-muted' : 'border-line')}>
                     #{i + 1} · <b style={{ color: estadoVar(CAT_ESTADO[j.categoria]) }}>{j.indice}</b>
+                    {pieDeSalto(j.id) && <span className="font-sans text-xs text-ink-2"> · {pieDeSalto(j.id) === 'izquierdo' ? 'Izq.' : 'Der.'}</span>}
                   </Link>
                 ))}
               </div>

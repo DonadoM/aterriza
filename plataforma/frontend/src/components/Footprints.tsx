@@ -1,6 +1,7 @@
 /**
- * Mapa de plantillas: dos huellas con calor en talón y antepié (carga relativa a
- * la de pie) y la flecha del orden de apoyo antepié → talón. Puede animarse con un
+ * Mapa de plantilla: la huella del pie medido con calor en talón y antepié (carga
+ * relativa a la de pie) y la flecha del orden de apoyo antepié → talón. Solo hay
+ * una plantilla (canales P1): el otro pie no se dibuja ni muestra valores. Puede animarse con un
  * reloj externo (repetición sincronizada con el atleta 3D) sin re-render de React.
  */
 import { useEffect, useId, useRef } from 'react'
@@ -35,9 +36,10 @@ interface Props {
   static?: number[]
   ordenMs?: number | null
   compact?: boolean
+  pie?: 'izquierdo' | 'derecho' | null
 }
 
-export function Footprints({ serie, clock, static: fixed, ordenMs, compact }: Props) {
+export function Footprints({ serie, clock, static: fixed, ordenMs, compact, pie = null }: Props) {
   const uid = useId().replace(/:/g, '')
   const refs = useRef<(SVGCircleElement | null)[]>([])
   const stops = useRef<(SVGStopElement | null)[]>([])
@@ -62,15 +64,12 @@ export function Footprints({ serie, clock, static: fixed, ordenMs, compact }: Pr
     return () => cancelAnimationFrame(raf)
   }, [serie, clock, fixed])
 
-  // índice: 0 izq. talón, 1 izq. antepié, 2 der. talón, 3 der. antepié
-  const feet = [
-    { x: 0, flip: true, name: 'Izquierdo', heel: 0, fore: 1 },
-    { x: 120, flip: false, name: 'Derecho', heel: 2, fore: 3 },
-  ]
+  // índices 0 talón y 1 antepié (canales P1); 2 y 3 (P2) no se usan
+  const feet = [{ x: 0, flip: pie === 'izquierdo', name: pie === 'izquierdo' ? 'Izquierdo' : pie === 'derecho' ? 'Derecho' : '', heel: 0, fore: 1 }]
   return (
-    <svg viewBox="-20 -14 260 252" className={compact ? 'h-full w-full' : 'w-full'} role="img" aria-label="Mapa de presión de las plantillas">
+    <svg viewBox="-30 -14 170 252" className={compact ? 'h-full w-full' : 'w-full'} role="img" aria-label={pie ? `Mapa de presión de la plantilla, pie ${pie}` : 'Mapa de presión de la plantilla'}>
       <defs>
-        {[0, 1, 2, 3].map((i) => (
+        {[0, 1].map((i) => (
           <radialGradient key={i} id={`${uid}g${i}`}>
             <stop ref={(e) => void (stops.current[i] = e)} offset="0" stopColor="#40e0d0" />
             <stop offset="1" stopColor="#40e0d0" stopOpacity="0" />
@@ -108,7 +107,7 @@ export function Footprints({ serie, clock, static: fixed, ordenMs, compact }: Pr
             </marker>
           </defs>
           <path
-            d={ordenMs >= 0 ? 'M110 66 C 118 110 118 140 110 172' : 'M110 172 C 118 140 118 110 110 66'}
+            d={ordenMs >= 0 ? 'M118 66 C 126 110 126 140 118 172' : 'M118 172 C 126 140 126 110 118 66'}
             stroke={ordenMs >= 0 ? 'var(--ok)' : 'var(--bad)'}
             strokeWidth="2.2"
             fill="none"
@@ -117,7 +116,7 @@ export function Footprints({ serie, clock, static: fixed, ordenMs, compact }: Pr
           >
             <animate attributeName="stroke-dashoffset" from="16" to="0" dur="0.8s" repeatCount="indefinite" />
           </path>
-          <text x={110} y={-2} textAnchor="middle" className="fill-[var(--ink-2)] font-mono text-[10px]">
+          <text x={50} y={-2} textAnchor="middle" className="fill-[var(--ink-2)] font-mono text-[10px]">
             {ordenMs >= 0 ? 'antepié → talón' : 'talón primero'}
           </text>
         </g>

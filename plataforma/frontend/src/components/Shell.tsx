@@ -8,8 +8,9 @@ import { Logo } from './ui'
 function Conexion() {
   const st = useLive((s) => s.status)
   const ws = useLive((s) => s.conectadoWs)
-  const tipo = st?.tipo === 'demo' ? 'Demo' : st?.tipo === 'wokwi' ? 'Wokwi' : st?.tipo === 'virtual' ? 'Banco virtual' : 'ESP32'
+  const tipo = st?.tipo === 'demo' ? 'Demo' : st?.tipo === 'wokwi' ? 'Wokwi' : st?.tipo === 'virtual' ? 'Banco virtual' : st?.tipo === 'wifi' ? 'ESP32 · WiFi' : 'ESP32'
   const conectado = ws && st?.estado === 'conectado'
+  const reconectando = ws && st?.estado === 'reconectando'
   return (
     <span className={clsx('inline-flex items-center gap-2.5 whitespace-nowrap border-l-2 py-1 pl-3 pr-1 font-mono text-xs', !ws ? 'border-bad text-bad' : conectado && st?.fresco ? 'border-accent text-ink-2' : 'border-line-2 text-muted')} data-testid="estado-conexion">
       <TrazoSenal />
@@ -19,6 +20,11 @@ function Conexion() {
         <span className="leading-tight">
           <span className="block text-ink">{tipo}</span>
           <span className="tnum">{st?.fresco ? `${Math.round(st.hz)} Hz` : 'sin datos'}</span>
+        </span>
+      ) : reconectando ? (
+        <span className="leading-tight">
+          <span className="block text-ink">{tipo}</span>
+          <span>reconectando…</span>
         </span>
       ) : (
         'sin dispositivo'

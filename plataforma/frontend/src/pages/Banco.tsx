@@ -21,7 +21,7 @@ import { Button, CAT_ESTADO, ESTADO, estadoVar, inputCls } from '../components/u
 import { api } from '../lib/api'
 import { FSR_INFO, IMU_INFO, IMU_MODELO, PRESS_RAW, SAT_RAW, flagList, fsrEstado, hwNow, saltoVirtual, tilt, virtual, volts, type Aterrizaje } from '../lib/banco'
 import { frame, onContacto, onSalto } from '../lib/live'
-import { useLive } from '../lib/store'
+import { sinBilaterales, useLive } from '../lib/store'
 import type { Hardware, SaltoEvento } from '../lib/types'
 import { Athlete, newJoints } from '../three/Athlete'
 import { BenchRig } from '../three/BenchRig'
@@ -185,7 +185,7 @@ function Vivo({ hw }: { hw: Hardware | null }) {
   return (
     <div className="flex flex-col gap-6">
       <section>
-        <h3 className="eyebrow mb-3">Plantillas · 4 FSR 402 (divisor de voltaje al ADC)</h3>
+        <h3 className="eyebrow mb-3">Plantilla · FSR 402 (divisor de voltaje al ADC) · solo P1 operativa</h3>
         <div className="grid gap-3 sm:grid-cols-2">
           {FSR_INFO.map((s, i) => {
             const raw = hw?.raw[i] ?? 0
@@ -194,7 +194,7 @@ function Vivo({ hw }: { hw: Hardware | null }) {
               <div key={s.id} className={clsx('rounded-2xl border p-3.5 transition-colors', raw >= SAT_RAW ? 'border-bad/50 bg-bad-soft' : raw > PRESS_RAW ? 'border-accent/50 bg-accent-soft' : 'border-line bg-surface')} data-testid="banco-fsr">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="font-semibold">{s.nombre}</span>
-                  <span className={clsx('text-sm font-semibold', toneCls[e.tono])}>{hw ? e.label : ''}</span>
+                  <span className={clsx('text-sm font-semibold', i >= 2 ? 'text-muted' : toneCls[e.tono])}>{i >= 2 ? 'Sin señal: no se usa' : hw ? e.label : ''}</span>
                 </div>
                 <div className="mt-1 flex items-baseline gap-2 whitespace-nowrap">
                   <span className="display tnum text-[34px]" data-testid={`banco-fsr-raw-${i}`}>
@@ -870,10 +870,10 @@ function SaltoManos({ esVirtual, hw, onSalto: alGuardar }: { esVirtual: boolean;
               })}
             </ul>
             {faltan.length > 0 && <p className="mt-3 text-sm text-muted">No disponibles sin IMU: {faltan.map((i) => i.nombre.toLowerCase()).join(', ')}.</p>}
-            {res.acciones[0] && (
+            {sinBilaterales(res.acciones)[0] && (
               <div className="mt-4 rounded-2xl bg-surface-2 p-4">
                 <p className="eyebrow mb-1">Lo que el atleta oiría primero</p>
-                <p className="text-lg font-semibold leading-snug">{res.acciones[0].mensaje}</p>
+                <p className="text-lg font-semibold leading-snug">{sinBilaterales(res.acciones)[0].mensaje}</p>
               </div>
             )}
             <div className="mt-5 flex flex-wrap gap-2">
@@ -1220,7 +1220,7 @@ export default function Banco() {
 
   const resumen = useMemo(() => {
     if (!hw) return null
-    const fsrOk = hw.raw.filter((r) => r < SAT_RAW).length
+    const fsrOk = hw.raw.slice(0, 2).filter((r) => r < SAT_RAW).length
     const imuOk = hw.ok ? hw.ok.filter(Boolean).length : 0
     return { fsrOk, imuOk }
   }, [hw])
@@ -1233,7 +1233,7 @@ export default function Banco() {
         <p className="mt-4 max-w-[52ch] text-lg text-ink-2">Revisa cada sensor, míralo en 3D y simula un aterrizaje con las manos. Lo que pase aquí no se mezcla con los atletas.</p>
         {resumen && (
           <p className="mt-3 font-mono text-sm text-muted" data-testid="banco-resumen">
-            {resumen.fsrOk}/4 FSR sin saturar (&lt; {SAT_RAW} cuentas) · {resumen.imuOk}/3 IMU con señal
+            {resumen.fsrOk}/2 FSR (P1) sin saturar (&lt; {SAT_RAW} cuentas) · {resumen.imuOk}/3 IMU con señal
           </p>
         )}
 

@@ -1,12 +1,12 @@
 import clsx from 'clsx'
 import { ArrowRight } from 'lucide-react'
 import { ModoSaltoToggle, useModoSalto } from '../components/ModoSalto'
-import { Cargando, MarcaEstado } from '../components/marks'
+import { Cargando } from '../components/marks'
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
+import { AvisoUnaPlantilla, SelectorPie } from '../components/SelectorPie'
 import { Button, inputCls } from '../components/ui'
-import { IMU_INFO } from '../lib/banco'
 import { api } from '../lib/api'
 import { frame } from '../lib/live'
 import { useApp, useLive } from '../lib/store'
@@ -18,6 +18,7 @@ import { FloorPressure, Stage } from '../three/Stage'
 const FUENTES = [
   { id: 'demo', titulo: 'Demostración', desc: 'Gemelo digital con el firmware real. Sin hardware.', tag: 'gemelo · 100 Hz' },
   { id: 'usb', titulo: 'ESP32 por USB', desc: 'Plantillas e IMU reales del prototipo.', tag: 'USB · 921 600 baud' },
+  { id: 'wifi', titulo: 'ESP32 por WiFi', desc: 'Sin cable de datos: el equipo funciona con su cargador.', tag: 'WiFi · TCP :3333' },
   { id: 'wokwi', titulo: 'Wokwi', desc: 'Simulación del circuito en VS Code.', tag: 'rfc2217 · :4000' },
 ] as const
 
@@ -57,20 +58,21 @@ function Paso({ n, titulo, activo, hecho, children }: { n: number; titulo: strin
   )
 }
 
-type SensorEstado = boolean | null | 'pendiente'
-
-function Sensor({ label, ok, detalle, delay }: { label: string; ok: SensorEstado; detalle: string; delay: number }) {
-  const warn = ok === 'pendiente'
-  return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay }} className={clsx('flex items-center gap-3 rounded-2xl border p-3.5', ok === null ? 'border-line' : warn ? 'border-mid/40 bg-mid-soft' : ok ? 'border-ok/40 bg-ok-soft' : 'border-bad/40 bg-bad-soft')} data-testid="sensor" data-estado={String(ok)}>
-      <span className="grid size-9 place-items-center text-muted">{ok === null ? <Cargando /> : <MarcaEstado estado={warn ? 'pendiente' : ok ? 'ok' : 'no'} className="size-7" />}</span>
-      <span className="flex-1 leading-tight">
-        <span className="block font-semibold">{label}</span>
-        <span className="font-mono text-xs text-muted">{detalle}</span>
-      </span>
-      <span className={clsx('text-sm font-semibold', warn ? 'text-mid' : ok ? 'text-ok' : ok === false ? 'text-bad' : 'text-muted')}>{ok === null ? '…' : warn ? 'Pendiente' : ok ? 'OK' : 'Revisar'}</span>
-    </motion.div>
-  )
+const HOST_WIFI = 'aterriza.local'
+const HOST_AP = '192.168.4.1'
+const leerHost = () => {
+  try {
+    return localStorage.getItem('wifi-host') || HOST_WIFI
+  } catch {
+    return HOST_WIFI
+  }
+}
+const guardarHost = (h: string) => {
+  try {
+    localStorage.setItem('wifi-host', h)
+  } catch {
+    /* almacenamiento no disponible */
+  }
 }
 
 export default function Preparar() {
@@ -82,6 +84,7 @@ export default function Preparar() {
   const [puertos, setPuertos] = useState<string[]>([])
   const [puerto, setPuerto] = useState('')
   const [url, setUrl] = useState('rfc2217://localhost:4000')
+  const [host, setHost] = useState(leerHost)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [cuenta, setCuenta] = useState<number | null>(null)
@@ -89,10 +92,7 @@ export default function Preparar() {
   const scan = useRef<number | null>(null)
 
   const conectado = st?.estado === 'conectado' && st.fresco
-  // IMU opcional (la lumbar, aún sin instalar): si no está conectada no bloquea, solo se avisa
-  const imuPendiente = (id: string, i: { ok: boolean; ausente?: boolean }) => !i.ok && !!i.ausente && !!IMU_INFO.find((m) => m.id === id)?.opcional
-  const sensoresOk = !!st && st.fsr.length === 4 && st.fsr.every((s) => s.ok) && st.imu.every((s) => s.ok || imuPendiente(s.id, s)) && st.hz > 40
-  const paso = !conectado ? 1 : !taraOk ? (sensoresOk ? 3 : 2) : 4
+  const paso = !conectado ? 1 : !taraOk ? 2 : 3
 
   useEffect(() => {
     if (fuente === 'usb')
@@ -102,23 +102,6 @@ export default function Preparar() {
       })
   }, [fuente])
 
-  // barrido del atleta mientras se verifican los sensores
-  useEffect(() => {
-    if (paso !== 2 && paso !== 3) {
-      scan.current = null
-      return
-    }
-    let raf = 0
-    const t0 = performance.now()
-    const tick = () => {
-      const k = ((performance.now() - t0) / 1800) % 1
-      scan.current = 0.05 + 1.85 * (k < 0.5 ? k * 2 : 2 - k * 2)
-      raf = requestAnimationFrame(tick)
-    }
-    tick()
-    return () => cancelAnimationFrame(raf)
-  }, [paso])
-
   if (!atleta) return <Navigate to="/" replace />
 
   const conectar = async () => {
@@ -126,7 +109,9 @@ export default function Preparar() {
     setErr('')
     setTaraOk(false)
     try {
-      await api.post('/api/conectar', { fuente, puerto: fuente === 'usb' ? puerto : undefined, url: fuente === 'wokwi' ? url : undefined })
+      const dir = host.trim() || HOST_WIFI
+      await api.post('/api/conectar', { fuente, puerto: fuente === 'usb' ? puerto : undefined, url: fuente === 'wokwi' ? url : undefined, host: fuente === 'wifi' ? dir : undefined })
+      if (fuente === 'wifi') guardarHost(dir)
     } catch (e) {
       setErr((e as Error).message)
     } finally {
@@ -157,17 +142,15 @@ export default function Preparar() {
     nav('/evaluar')
   }
 
-  const fsrName: Record<string, string> = { P1_H: 'Talón izquierdo', P1_F: 'Antepié izquierdo', P2_H: 'Talón derecho', P2_F: 'Antepié derecho' }
-  const imuName: Record<string, string> = { T: 'Muslo derecho', P: 'Pierna derecha', L: 'Lumbar' }
-
   return (
     <div className="grid min-h-[calc(100vh-4rem)] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
       <div className="px-6 py-10 lg:px-16">
         <p className="eyebrow">Preparación guiada · {atleta.nombre}</p>
-        <h1 className="display mb-10 mt-3 text-5xl">Listos en 3 pasos</h1>
+        <h1 className="display mb-6 mt-3 text-5xl">Listos en 3 pasos</h1>
+        <AvisoUnaPlantilla className="mb-8 max-w-lg" />
 
         <Paso n={1} titulo="Conecta el dispositivo" activo={paso === 1} hecho={paso > 1}>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             {FUENTES.map((f) => (
               <button key={f.id} onClick={() => setFuente(f.id)} className={clsx('flex flex-col items-start gap-3 rounded-2xl border p-4 text-left transition', fuente === f.id ? 'border-accent bg-accent-soft' : 'border-line hover:border-line-2')} data-testid={`fuente-${f.id}`}>
                 <span className={clsx('font-mono text-[11px] uppercase tracking-[0.12em]', fuente === f.id ? 'text-accent' : 'text-muted')}>{f.tag}</span>
@@ -186,44 +169,36 @@ export default function Preparar() {
               ))}
             </select>
           )}
+          {fuente === 'wifi' && (
+            <div className="mt-4">
+              <input className={clsx(inputCls, 'w-full font-mono text-sm')} value={host} onChange={(e) => setHost(e.target.value)} list="hosts-wifi" placeholder={HOST_WIFI} spellCheck={false} autoCapitalize="off" autoCorrect="off" aria-label="Dirección del equipo por WiFi" aria-describedby="ayuda-wifi" data-testid="wifi-host" />
+              <datalist id="hosts-wifi">
+                <option value={HOST_WIFI} />
+                <option value={HOST_AP} />
+              </datalist>
+              <p id="ayuda-wifi" className="mt-2 max-w-lg text-sm leading-snug text-muted">
+                Enciende el equipo con su cargador. Si está en la red del laboratorio, usa <span className="font-mono text-ink-2">{HOST_WIFI}</span>. Si no, crea la red «Aterriza-ESP32»: únete a ella desde este computador y usa <span className="font-mono text-ink-2">{HOST_AP}</span>.
+              </p>
+            </div>
+          )}
           {fuente === 'wokwi' && <input className={clsx(inputCls, 'mt-4 w-full font-mono text-sm')} value={url} onChange={(e) => setUrl(e.target.value)} aria-label="URL de Wokwi" />}
           <Button size="lg" className="mt-5" onClick={conectar} disabled={busy} data-testid="conectar">
             {busy ? <Cargando /> : null} Conectar
           </Button>
         </Paso>
 
-        <Paso n={2} titulo="Verifica los sensores" activo={paso === 2 || paso === 3} hecho={paso > 3 || (paso === 3 && sensoresOk)}>
-          <p className="mb-4 max-w-lg text-ink-2">Párate sobre las plantillas o, sin atleta, <b className="text-ink">presiona cada una con la mano</b>: se marcan en verde al detectar la carga.</p>
-          {st && (
-            <div className="grid gap-2 sm:grid-cols-2">
-              {st.fsr.map((s, i) => (
-                <Sensor key={s.id} label={`Plantilla · ${fsrName[s.id]}`} ok={s.saturado ? false : s.visto === false ? null : s.ok} detalle={s.saturado ? 'saturado: revisar divisor' : s.visto === false ? 'presiónala una vez' : `lectura ${s.crudo}`} delay={i * 0.08} />
-              ))}
-              {st.imu.map((s, i) => {
-                const pend = imuPendiente(s.id, s)
-                return <Sensor key={s.id} label={`IMU · ${imuName[s.id]}`} ok={pend ? 'pendiente' : s.ok} detalle={pend ? 'no conectada: el tronco no se evaluará' : s.error ? 'error de comunicación I2C' : `|a| = ${s.g.toFixed(2)} g`} delay={0.32 + i * 0.08} />
-              })}
-              <Sensor label="Flujo de datos" ok={st.hz > 40} detalle={`${Math.round(st.hz)} Hz · ${st.perdidas} pérdidas`} delay={0.56} />
-            </div>
-          )}
-          {st && !sensoresOk && st.tipo !== 'demo' && (
-            <button onClick={() => nav('/banco')} className="mt-3 text-sm font-semibold text-accent underline-offset-4 hover:underline" data-testid="ir-banco">
-              ¿Algo en rojo? Diagnostícalo sensor por sensor en el Banco de pruebas →
-            </button>
-          )}
-        </Paso>
-
-        <Paso n={3} titulo="Tara de pie" activo={paso === 3} hecho={paso > 3}>
-          <p className="max-w-md text-lg text-ink-2">Párate derecho sobre las plantillas, con el peso repartido, y quédate quieto. Esa postura será el cero de los ángulos.</p>
+        <Paso n={2} titulo="Tara de pie" activo={paso === 2} hecho={paso > 2}>
+          <p className="max-w-md text-lg text-ink-2">Párate derecho con el pie medido sobre la plantilla, apoyando el peso en él, y quédate quieto. Esa postura será el cero de los ángulos.</p>
           <p className="mt-2 max-w-md text-sm text-muted">Sin atleta: deja las IMU quietas en su posición de referencia (eje X hacia arriba, como de pie). Puedes volver a tarar cuando quieras con el botón «Tarar» de arriba.</p>
           <Button size="lg" className="mt-5" onClick={tara} disabled={cuenta !== null} data-testid="tara">
             Iniciar tara
           </Button>
         </Paso>
 
-        <Paso n={4} titulo="¡Todo listo!" activo={paso === 4} hecho={false}>
+        <Paso n={3} titulo="¡Todo listo!" activo={paso === 3} hecho={false}>
           <p className="max-w-md text-lg text-ink-2">{modo === 'cajon' ? 'Protocolo: 3 aterrizajes desde el cajón de 30 – 40 cm.' : 'Protocolo: 3 saltos verticales en el sitio, aterrizando en el mismo lugar.'} El sistema analiza cada salto solo.</p>
           <ModoSaltoToggle className="mt-4 self-start !bg-surface-2" />
+          <SelectorPie className="mt-5" />
           <Button size="xl" className="mt-5" onClick={empezar} data-testid="empezar">
             Empezar evaluación <ArrowRight className="size-6" />
           </Button>

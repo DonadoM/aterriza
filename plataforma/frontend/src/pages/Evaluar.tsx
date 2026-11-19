@@ -8,13 +8,14 @@ import { Button, CAT_ESTADO, ESTADO, estadoVar } from '../components/ui'
 import { api } from '../lib/api'
 import { IMU_INFO, saltoVirtual } from '../lib/banco'
 import { frame, onContacto, onSalto } from '../lib/live'
-import { useApp, useLive } from '../lib/store'
+import { pieDeSalto, sinBilaterales, useApp, useLive } from '../lib/store'
 import type { Referencia, SaltoEvento } from '../lib/types'
 import { AngleArcs } from '../three/AngleArcs'
 import { Athlete, newJoints } from '../three/Athlete'
 import { emptyPose, loadsAt, poseFromFrame, type ModoSalto } from '../three/pose'
 import { RootMotion } from '../three/raiz'
 import { ModoSaltoToggle, useModoSalto } from '../components/ModoSalto'
+import { EtiquetaPie, SelectorPie } from '../components/SelectorPie'
 import { Cargando, MarcaPlantilla, MarcaSalto } from '../components/marks'
 import { newClock, ReplayDriver } from '../three/Replay'
 import { FloorPressure, Shockwave, Stage, type Vista } from '../three/Stage'
@@ -187,6 +188,7 @@ export default function Evaluar() {
             </button>
           ))}
         </div>
+        <SelectorPie compacto />
         <ModoSaltoToggle />
       </div>
 
@@ -227,24 +229,20 @@ export default function Evaluar() {
                   </span>
                 </div>
                 <div className="min-w-[260px] flex-1 border-l border-line pl-6">
-                  {res.acciones[0] ? (
+                  {sinBilaterales(res.acciones)[0] ? (
                     <>
                       <p className="eyebrow mb-1">Lo primero a corregir</p>
-                      <p className="text-xl font-semibold leading-snug">{res.acciones[0].mensaje}</p>
+                      <p className="text-xl font-semibold leading-snug">{sinBilaterales(res.acciones)[0].mensaje}</p>
                     </>
                   ) : (
                     <>
                       <p className="eyebrow mb-1">Lo hiciste bien</p>
-                      <p className="text-xl font-semibold leading-snug">{res.fortalezas[0]?.mensaje}</p>
+                      <p className="text-xl font-semibold leading-snug">{sinBilaterales(res.fortalezas)[0]?.mensaje}</p>
                     </>
                   )}
-                  {res.avisos
-                    .filter((a) => a.tipo === 'asimetria')
-                    .map((a) => (
-                      <p key={a.tipo} className={clsx('mt-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-semibold', ESTADO.parcial.soft, ESTADO.parcial.color)} data-testid="aviso-asimetria">
-                        {a.texto}
-                      </p>
-                    ))}
+                  <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-ink-2">
+                    <EtiquetaPie pie={pieDeSalto(salto?.id)} /> Medición con una plantilla: sin comparación entre pies.
+                  </p>
                 </div>
                 <div className="flex gap-2">
                   {salto?.id && (
@@ -289,7 +287,7 @@ export default function Evaluar() {
         <div className="pointer-events-none absolute right-10 top-1/2 hidden -translate-y-1/2 xl:block">
           <div className="eyebrow mb-2">Ítems</div>
           <div className="grid grid-cols-1 gap-1">
-            {res.items
+            {sinBilaterales(res.items)
               .filter((i) => i.estado !== 'no_disponible')
               .map((i) => {
                 const e = ESTADO[i.estado]

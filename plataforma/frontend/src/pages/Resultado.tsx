@@ -7,7 +7,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Footprints } from '../components/Footprints'
 import { Button, CAT_ESTADO, Disclaimer, ESTADO, EstadoBadge, estadoVar, IndexRing, Sheet } from '../components/ui'
 import { api } from '../lib/api'
-import { useApp } from '../lib/store'
+import { EtiquetaPie, AvisoUnaPlantilla } from '../components/SelectorPie'
+import { pieDeSalto, sinBilaterales, useApp } from '../lib/store'
 import type { Item, Referencia, SaltoDetalle } from '../lib/types'
 import { AngleArcs } from '../three/AngleArcs'
 import { Athlete, newJoints } from '../three/Athlete'
@@ -159,6 +160,7 @@ export default function Resultado() {
   const est = CAT_ESTADO[r.categoria]
   const m = r.metricas
   const apoyo = r.items.find((i) => i.id === 'apoyo')
+  const pie = pieDeSalto(d.id)
 
   return (
     <div className="mx-auto max-w-[1500px] px-6 pb-20 pt-8 lg:px-10" data-testid="resultado">
@@ -228,28 +230,18 @@ export default function Resultado() {
             <p className="mt-1 font-mono text-xs text-muted">
               índice 0 – 100 · {m.vuelo_ms != null ? `vuelo ${m.vuelo_ms} ms` : ''}
             </p>
-            {r.avisos
-              .filter((a) => a.tipo === 'asimetria')
-              .map((a) => (
-                <p key={a.tipo} className="mt-4 rounded-xl bg-mid-soft px-3 py-2 text-sm font-semibold text-mid" data-testid="aviso-asimetria">
-                  {a.texto}
-                </p>
-              ))}
           </div>
 
           <div className="rounded-[32px] border border-line bg-surface p-6">
-            <h3 className="display-cond text-2xl">Plantillas</h3>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="display-cond text-2xl">Plantilla</h3>
+              <EtiquetaPie pie={pie} />
+            </div>
             <p className="eyebrow mt-1">carga en × la carga de pie (relativa, sin calibrar)</p>
             <div className="mx-auto mt-3 max-w-[300px]">
-              <Footprints serie={d.serie} clock={mirror} ordenMs={(m.antepie_a_talon_ms as number) ?? null} />
+              <Footprints pie={pie} serie={d.serie} clock={mirror} ordenMs={(m.antepie_a_talon_ms as number) ?? null} />
             </div>
             <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-              <div className="rounded-xl bg-surface-2 p-3">
-                <dt className="text-muted">Reparto izq. / der.</dt>
-                <dd className="display-cond tnum text-xl">
-                  {fmt(m.carga_izquierda_pct as number)} / {fmt(100 - ((m.carga_izquierda_pct as number) ?? 50))} %
-                </dd>
-              </div>
               <div className="rounded-xl bg-surface-2 p-3">
                 <dt className="text-muted">Orden de apoyo</dt>
                 <dd className="display-cond text-xl">{apoyo?.estado === 'ok' ? 'Antepié → talón' : apoyo?.estado === 'parcial' ? 'Pie plano' : 'Talón primero'}</dd>
@@ -261,6 +253,7 @@ export default function Resultado() {
                 </dd>
               </div>
             </dl>
+            <AvisoUnaPlantilla className="mt-4" />
           </div>
         </aside>
 
@@ -297,11 +290,11 @@ export default function Resultado() {
 
           <div>
             <div className="mb-4 flex items-baseline gap-3">
-              <h2 className="display text-4xl">{r.acciones.length ? 'Qué corregir' : 'Nada urgente que corregir'}</h2>
+              <h2 className="display text-4xl">{sinBilaterales(r.acciones).length ? 'Qué corregir' : 'Nada urgente que corregir'}</h2>
               <span className="eyebrow">priorizado por impacto</span>
             </div>
             <div className="grid gap-4 xl:grid-cols-3" data-testid="acciones">
-              {r.acciones.map((a, i) => (
+              {sinBilaterales(r.acciones).map((a, i) => (
                 <motion.article key={a.id} initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 + i * 0.12, duration: 0.6, ease: [0.16, 1, 0.3, 1] }} className="flex flex-col rounded-[28px] border border-line bg-surface p-6" data-testid="accion">
                   <div className="flex items-center justify-between">
                     <span className="display text-5xl text-line-2">{i + 1}</span>
@@ -318,13 +311,13 @@ export default function Resultado() {
             </div>
           </div>
 
-          {r.fortalezas.length > 0 && (
+          {sinBilaterales(r.fortalezas).length > 0 && (
             <div className="rounded-[28px] border border-ok/30 bg-ok-soft p-6">
               <h3 className="flex items-center gap-2 font-semibold text-ok">
                 Lo que hiciste bien
               </h3>
               <ul className="mt-3 grid gap-2 md:grid-cols-3">
-                {r.fortalezas.map((f) => (
+                {sinBilaterales(r.fortalezas).map((f) => (
                   <li key={f.id} className="flex gap-2 text-lg leading-snug">
                     <span className="mt-2 size-1.5 shrink-0 rounded-full bg-ok" />
                     {f.mensaje}
@@ -353,7 +346,7 @@ export default function Resultado() {
                     </tr>
                   </thead>
                   <tbody>
-                    {r.items.map((it) => (
+                    {sinBilaterales(r.items).map((it) => (
                       <tr key={it.id} className="border-b border-line/60">
                         <td className="py-3 font-mono text-sm text-muted">{it.item}</td>
                         <td className="font-medium">{it.nombre}</td>

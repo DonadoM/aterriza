@@ -80,7 +80,7 @@ export default function Inicio() {
     <div className="grid min-h-[calc(100vh-4rem)] lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
       <section className="relative z-10 flex flex-col justify-center px-6 py-12 lg:px-16">
         <motion.p initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="eyebrow">
-          Evaluación del aterrizaje · 2 plantillas · 3 IMU
+          Evaluación del aterrizaje · plantilla de carga · 3 IMU
         </motion.p>
         <motion.h1
           initial={{ opacity: 0, y: 24 }}

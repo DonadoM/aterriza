@@ -14,7 +14,7 @@ import { ModoSaltoToggle } from '../components/ModoSalto'
 import { Button, Field, inputCls } from '../components/ui'
 import { api } from '../lib/api'
 import { FLAGS, SAT_RAW } from '../lib/banco'
-import { useApp, useLive } from '../lib/store'
+import { pieDeSalto, useApp, useLive } from '../lib/store'
 
 type Tab = 'senales' | 'dispositivo' | 'datos' | 'criterios' | 'ajustes'
 const TABS: [Tab, string, string][] = [
@@ -184,10 +184,10 @@ function Senales({ crudo }: { crudo: Crudo | null }) {
           max={4095}
           linea={{ v: SAT_RAW, label: `saturación · ${SAT_RAW} cuentas` }}
           series={[
-            { label: 'talón izq. · P1_H', color: '#7aa2ff', valor: C('P1_H') },
-            { label: 'antepié izq. · P1_F', color: '#3ee0ff', valor: C('P1_F') },
-            { label: 'talón der. · P2_H', color: '#ff8f6b', valor: C('P2_H') },
-            { label: 'antepié der. · P2_F', color: '#ffd166', valor: C('P2_F') },
+            { label: 'talón · P1_H', color: '#7aa2ff', valor: C('P1_H') },
+            { label: 'antepié · P1_F', color: '#3ee0ff', valor: C('P1_F') },
+            { label: 'P2_H · sin señal (no medido)', color: '#ff8f6b', valor: C('P2_H') },
+            { label: 'P2_F · sin señal (no medido)', color: '#ffd166', valor: C('P2_F') },
           ]}
         />
       )}
@@ -323,7 +323,6 @@ const COLS_M: [string, string, string][] = [
   ['tronco_contacto', 'Tronco al contacto', '°'],
   ['antepie_a_talon_ms', 'Antepié → talón', 'ms'],
   ['diferencia_contacto_ms', 'Dif. contacto', 'ms'],
-  ['lsi_carga_pct', 'Simetría carga (LSI)', '%'],
   ['valgo_der_max', 'Valgo der. máx.', '°'],
   ['carga_pico_rel', 'Carga pico', '× de pie'],
   ['saturado_pct', 'FSR saturado', '%'],
@@ -337,8 +336,8 @@ function Datos({ token }: { token: string }) {
   }, [token])
   const lista = (filas ?? []).filter((j) => (ver === 'banco' ? j.banco : !j.banco))
   const exportar = () => {
-    const head = ['id', 'atleta', 'fecha', 'modo_salto', 'indice_0_100', 'categoria', 'confianza', ...COLS_M.map(([k, , u]) => `${k} (${u})`)]
-    const body = lista.map((j) => [j.id, j.atleta, j.fecha, j.modo_salto, j.indice, j.categoria, j.confianza, ...COLS_M.map(([k]) => j.metricas[k] ?? '')])
+    const head = ['id', 'atleta', 'fecha', 'modo_salto', 'pie_medido', 'indice_0_100', 'categoria', 'confianza', ...COLS_M.map(([k, , u]) => `${k} (${u})`)]
+    const body = lista.map((j) => [j.id, j.atleta, j.fecha, j.modo_salto, pieDeSalto(j.id) ?? '', j.indice, j.categoria, j.confianza, ...COLS_M.map(([k]) => j.metricas[k] ?? '')])
     const csv = [head, ...body].map((r) => r.map((v) => (typeof v === 'string' && /[",;]/.test(v) ? `"${v.replace(/"/g, '""')}"` : String(v))).join(',')).join('\n')
     const a = document.createElement('a')
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
@@ -373,7 +372,7 @@ function Datos({ token }: { token: string }) {
           <table className="w-full text-left text-sm">
             <thead className="bg-surface-2 align-bottom">
               <tr>
-                {['#', 'Atleta', 'Fecha', 'Modo', 'Índice'].map((h) => (
+                {['#', 'Atleta', 'Fecha', 'Modo', 'Pie', 'Índice'].map((h) => (
                   <th key={h} className="eyebrow px-3 py-2 font-normal">
                     {h}
                   </th>
@@ -394,6 +393,7 @@ function Datos({ token }: { token: string }) {
                   <td className="px-3 font-sans">{j.atleta}</td>
                   <td className="whitespace-nowrap px-3">{j.fecha.replace('T', ' ').slice(0, 16)}</td>
                   <td className="px-3 font-sans text-ink-2">{j.modo_salto === 'sitio' ? 'en el sitio' : 'cajón'}</td>
+                  <td className="px-3 font-sans text-ink-2">{pieDeSalto(j.id) ?? ''}</td>
                   <td className="px-3">
                     {j.indice} <span className="font-sans text-xs text-muted">{j.categoria}</span>
                   </td>
